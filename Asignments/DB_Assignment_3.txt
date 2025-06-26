@@ -1,0 +1,241 @@
+-- UNIVERSITY DATABASE SYSTEM
+
+
+1. Students ↔ StudentProfiles: Which relationships will be used?
+Answer: One-to-One relationship. StudentProfiles.student_id will be a FK to
+           Students.student_id and will also have a UNIQUE constraint.
+
+2. Instructors → Courses: Which relationships will be used?
+Answer: One-to-Many relationship. Courses.instructor_id will be a FK to
+           Instructors.instructor_id. One instructor can teach many courses.
+
+3. Students ↔ Courses via Enrollments: Which relationships will be used?
+Answer: Many-to-Many relationship. The Enrollments table acts as a
+           junction table, with FKs to both Students and Courses.
+
+4. List out all the table fields in which indexing will be added.
+Answer:
+   Primary Keys (automatically indexed by most RDBMS):
+       - Students.student_id
+       - Instructors.instructor_id
+       - Courses.course_id
+       - Enrollments.enrollment_id
+       - StudentProfiles.profile_id
+
+   Foreign Keys (good practice to index for join performance and RI checks):
+       - Courses.instructor_id
+       - Enrollments.student_id
+       - Enrollments.course_id
+       - StudentProfiles.student_id (also has a UNIQUE constraint)
+
+   Other columns for performance based on common query patterns:
+       - Students.email (for lookups, UNIQUE constraint often creates an index)
+       - Instructors.email (for lookups, UNIQUE constraint often creates an index)
+       - Courses.title (for lookups, UNIQUE constraint often creates an index)
+       - Courses.credits (if frequently filtered or sorted by credits)
+       - Enrollments.enrolled_on (if queries often filter/sort by enrollment date)
+       - The composite key (student_id, course_id) in Enrollments will have a UNIQUE index.
+
+
+-- Students Table
+CREATE TABLE Students (
+    student_id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE
+);
+-- Index on email for faster lookups (often created by UNIQUE constraint anyway)
+CREATE INDEX IF NOT EXISTS idx_students_email ON Students(email);
+
+-- Instructors Table
+CREATE TABLE Instructors (
+    instructor_id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE
+);
+-- Index on email for faster lookups
+CREATE INDEX IF NOT EXISTS idx_instructors_email ON Instructors(email);
+
+-- Courses Table
+CREATE TABLE Courses (
+    course_id SERIAL PRIMARY KEY,
+    title VARCHAR(150) NOT NULL UNIQUE,
+    credits INT NOT NULL CHECK (credits > 0 AND credits < 10), -- Assuming credits are positive and reasonable
+    instructor_id INT,
+    FOREIGN KEY (instructor_id) REFERENCES Instructors(instructor_id)
+        ON DELETE SET NULL  -- If an instructor is deleted, the course's instructor_id becomes NULL
+        ON UPDATE CASCADE   -- If an instructor_id changes, update it here
+);
+-- Index on instructor_id (Foreign Key)
+CREATE INDEX IF NOT EXISTS idx_courses_instructor_id ON Courses(instructor_id);
+-- Index on title for faster lookups
+CREATE INDEX IF NOT EXISTS idx_courses_title ON Courses(title);
+-- Index on credits for filtering/sorting
+CREATE INDEX IF NOT EXISTS idx_courses_credits ON Courses(credits);
+
+-- StudentProfiles Table (One-to-One with Students)
+CREATE TABLE StudentProfiles (
+    profile_id SERIAL PRIMARY KEY,
+    student_id INT NOT NULL UNIQUE, -- Ensures one-to-one relationship
+    bio TEXT,
+    dob DATE,
+    FOREIGN KEY (student_id) REFERENCES Students(student_id)
+        ON DELETE CASCADE   -- If a student is deleted, their profile is also deleted
+        ON UPDATE CASCADE   -- If a student_id changes, update it here
+);
+-- The UNIQUE constraint on student_id will typically create an index.
+-- Explicit index for clarity or if DB doesn't auto-create for UNIQUE FK.
+CREATE INDEX IF NOT EXISTS idx_studentprofiles_student_id ON StudentProfiles(student_id);
+
+
+-- Enrollments Table (Junction table for Students and Courses - Many-to-Many)
+CREATE TABLE Enrollments (
+    enrollment_id SERIAL PRIMARY KEY,
+    student_id INT NOT NULL,
+    course_id INT NOT NULL,
+    enrolled_on DATE DEFAULT CURRENT_DATE,
+    FOREIGN KEY (student_id) REFERENCES Students(student_id)
+        ON DELETE CASCADE   -- If a student is deleted, their enrollments are deleted
+        ON UPDATE CASCADE,
+    FOREIGN KEY (course_id) REFERENCES Courses(course_id)
+        ON DELETE CASCADE   -- If a course is deleted, enrollments for it are deleted
+        ON UPDATE CASCADE,
+    UNIQUE (student_id, course_id) -- A student can enroll in a specific course only once
+);
+-- Index on student_id (Foreign Key)
+CREATE INDEX IF NOT EXISTS idx_enrollments_student_id ON Enrollments(student_id);
+-- Index on course_id (Foreign Key)
+CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON Enrollments(course_id);
+-- Index on enrolled_on for date-based queries
+CREATE INDEX IF NOT EXISTS idx_enrollments_enrolled_on ON Enrollments(enrolled_on);
+-- The UNIQUE constraint on (student_id, course_id) will typically create a composite index.
+
+
+
+-- Insert into Students
+INSERT INTO Students (name, email) VALUES
+('Alice Wonderland', 'alice.w@example.edu'),
+('Bob The Builder', 'bob.b@example.edu'),
+('Charlie Chaplin', 'charlie.c@example.edu'),
+('Diana Prince', 'diana.p@example.edu'),
+('Edward Scissorhands', 'edward.s@example.edu');
+
+-- Insert into Instructors
+INSERT INTO Instructors (name, email) VALUES
+('Prof. Albus Dumbledore', 'albus.d@example.edu'),
+('Dr. Indiana Jones', 'indy.j@example.edu'),
+('Ms. Minerva McGonagall', 'minerva.m@example.edu'),
+('Mr. John Keating', 'john.k@example.edu');
+
+-- Insert into Courses
+-- Assuming Prof. Dumbledore is instructor_id 1, Dr. Jones is 2, Ms. McGonagall is 3
+INSERT INTO Courses (title, credits, instructor_id) VALUES
+('Introduction to Magic', 3, 1),
+('Archaeology 101', 4, 2),
+('Transfiguration Basics', 3, 3),
+('Advanced Potion Making', 5, 1),
+('Ancient Civilizations', 4, 2),
+('Poetry and Passion', 2, 4),
+('Unassigned Course', 3, NULL);
+
+
+-- Insert into StudentProfiles
+-- Assuming Alice is student_id 1, Bob is 2, Charlie is 3, Diana is 4, Edward is 5
+INSERT INTO StudentProfiles (student_id, bio, dob) VALUES
+(1, 'Curious and adventurous.', '2000-03-15'),
+(2, 'Loves to build things.', '1999-07-22'),
+(3, 'A silent film enthusiast.', '2001-01-10'),
+(4, 'Passionate about justice.', '1998-11-05'),
+(5, 'Artistic and unique.', '2000-05-30');
+
+-- Insert into Enrollments
+INSERT INTO Enrollments (student_id, course_id, enrolled_on) VALUES
+(1, 1, '2023-09-01'),
+(1, 2, '2023-09-01'),
+(2, 2, '2023-09-02'),
+(3, 1, '2023-09-03'),
+(3, 3, '2023-09-03'),
+(4, 4, '2023-09-05');
+
+INSERT INTO Courses (title, credits, instructor_id) VALUES ('Database Systems', 3, 2); -- course_id will be 8
+INSERT INTO Enrollments (student_id, course_id, enrolled_on) VALUES (1, (SELECT course_id FROM Courses WHERE title = 'Database Systems'), '2023-09-06');
+INSERT INTO Enrollments (student_id, course_id, enrolled_on) VALUES (4, (SELECT course_id FROM Courses WHERE title = 'Database Systems'), '2023-09-07');
+
+
+
+
+
+-- 1. Retrieve student names, emails, bios, and dates of birth.
+SELECT s.name, s.email, sp.bio, sp.dob
+FROM Students s
+JOIN StudentProfiles sp ON s.student_id = sp.student_id;
+
+-- 2. Show instructor names and the titles of the courses they teach.
+SELECT i.name AS instructor_name, c.title AS course_title
+FROM Instructors i
+JOIN Courses c ON i.instructor_id = c.instructor_id
+ORDER BY i.name, c.title;
+
+-- 3. Show names and emails of students enrolled in "Database Systems".
+SELECT s.name, s.email
+FROM Students s
+JOIN Enrollments e ON s.student_id = e.student_id
+JOIN Courses c ON e.course_id = c.course_id
+WHERE c.title = 'Database Systems';
+
+-- 4. Show course titles with total enrollment count.
+SELECT c.title, COUNT(e.student_id) AS total_enrollments
+FROM Courses c
+LEFT JOIN Enrollments e ON c.course_id = e.course_id
+GROUP BY c.course_id, c.title -- Group by c.course_id as well if titles aren't guaranteed unique by DB (though ours are)
+ORDER BY total_enrollments DESC, c.title;
+
+-- 5. Show names of students who are not enrolled in any course.
+SELECT s.name
+FROM Students s
+LEFT JOIN Enrollments e ON s.student_id = e.student_id
+WHERE e.enrollment_id IS NULL;
+
+
+-- 6. Display course title and the instructor's name.
+SELECT c.title AS course_title, COALESCE(i.name, 'N/A - Unassigned') AS instructor_name
+FROM Courses c
+LEFT JOIN Instructors i ON c.instructor_id = i.instructor_id
+ORDER BY c.title;
+
+-- 7. Show who enrolled in which course and when.
+SELECT s.name AS student_name, c.title AS course_title, e.enrolled_on
+FROM Students s
+JOIN Enrollments e ON s.student_id = e.student_id
+JOIN Courses c ON e.course_id = c.course_id
+ORDER BY s.name, c.title, e.enrolled_on;
+
+-- 8. Show names of instructors without assigned courses.
+SELECT i.name
+FROM Instructors i
+LEFT JOIN Courses c ON i.instructor_id = c.instructor_id
+WHERE c.course_id IS NULL;
+
+-- 9. List students with their courses and instructor names.
+SELECT
+    s.name AS student_name,
+    c.title AS course_title,
+    COALESCE(i.name, 'N/A - Unassigned') AS instructor_name
+FROM Students s
+JOIN Enrollments e ON s.student_id = e.student_id
+JOIN Courses c ON e.course_id = c.course_id
+LEFT JOIN Instructors i ON c.instructor_id = i.instructor_id
+ORDER BY s.name, c.title;
+
+-- 10. What is the average number of credits per course?
+SELECT AVG(credits) AS average_credits FROM Courses;
+
+-- 11. Find the titles of courses with exactly 3 credits.
+SELECT title FROM Courses WHERE credits = 3;
+
+-- 12. What is the maximum and minimum number of credits among all courses?
+SELECT MAX(credits) AS max_credits, MIN(credits) AS min_credits FROM Courses;
+
+
+
+
+
